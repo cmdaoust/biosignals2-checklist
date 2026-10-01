@@ -128,6 +128,29 @@ details.tip summary { cursor: pointer; color: var(--accent); font-weight: 700; }
 details.tip p { margin: 6px 0 0; padding-left: 12px; border-left: 2px solid var(--accent); }
 summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .callout { font-size: .9rem; color: var(--muted); }
+
+/* Section done button */
+.sec-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; padding-block: 14px 0; }
+.sec-msg { font-size: .9rem; color: var(--done); font-weight: 700; }
+.done-btn { font: 700 .95rem var(--font-body); padding: 9px 18px; border-radius: 6px; border: 2px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+.done-btn:hover { filter: brightness(1.08); }
+.done-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+section.complete .done-btn { background: var(--done); border-color: var(--done); }
+.step.missed { background: color-mix(in srgb, var(--signal) 9%, transparent); box-shadow: inset 3px 0 0 var(--signal); }
+.step.flash { animation: flash 1.2s ease 2; }
+@keyframes flash { 50% { background: color-mix(in srgb, var(--signal) 22%, transparent); } }
+
+/* Missed-steps popup */
+.modal-back { position: fixed; inset: 0; z-index: 50; background: rgb(10 15 20 / .55); display: grid; place-items: center; padding: 16px; }
+.modal { background: var(--surface); color: var(--ink); border-radius: 10px; border-top: 5px solid var(--signal); width: min(480px, 100%); max-height: 85vh; overflow: auto; padding: 20px 22px; box-shadow: 0 20px 50px rgb(0 0 0 / .3); }
+.modal h3 { font-family: var(--font-display); font-size: 1.4rem; text-transform: uppercase; letter-spacing: .03em; margin: 0 0 4px; color: var(--signal); }
+.modal p { margin: 0 0 12px; color: var(--muted); }
+.modal ul { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 6px; }
+.modal li button { width: 100%; text-align: left; font: inherit; padding: 9px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+.modal li button:hover { border-color: var(--signal); }
+.modal li button span { color: var(--accent); font-size: .85rem; white-space: nowrap; }
+.modal-close { font: 700 .95rem var(--font-body); padding: 8px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .step.flash { animation: none; } }
 .callout b { color: var(--ink); }
 
 footer { padding-block: 40px; color: var(--muted); font-size: .85rem; }
@@ -161,6 +184,14 @@ footer { padding-block: 40px; color: var(--muted); font-size: .85rem; }
     <p>Work through each step in order and tick it off as you go. Your ticks are saved in this browser only, so other researchers won't see them. Press <b>Reset for next participant</b> before you start a new session.</p>
   </header>
   <div id="sections"></div>
+  <div class="modal-back" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle">Missed steps</h3>
+      <p id="modalText"></p>
+      <ul id="modalList"></ul>
+      <button class="modal-close" id="modalClose" type="button">Close</button>
+    </div>
+  </div>
   <footer>Based on <i>Biosignals2 Experiment Set-up Instructions (Short)</i>. Ask the lab manager for the lockbox code and the Stimulus PC password.</footer>
 </main>
 
@@ -348,7 +379,7 @@ const SECTIONS = [
       p("Load the participant's event-marker file (e.g. <span class=\"path\">r4755_events_blocks_psychopy_ledalab.txt</span>) from:") + code('...\\Box\\Project_Biosignals_study_2\\3_Data\\event_onsets\\blocks')],
     ["Check participant IDs match", p("<strong>Check that the participant ID in the event-marker filename matches the participant ID of the EDA data open in Ledalab.</strong>")],
     ["Run Continuous Decomposition Analysis", p("Select <b>Analysis → Continuous Decomposition Analysis</b> and run the CDA using the required analysis settings.")],
-    ["Export results", p("When the analysis has finished, export both sets of results:") + `<ul><li><b>Results → Export Event Related Activation</b></li><li><b>Results → Export SCR List</b></li></ul>`],
+    ["Export results", p("When the analysis has finished, export both sets of results:") + `<ul><li><b>Results → Export Event Related Activation</b></li><li><b>Results → Export SCR List</b></li></ul>` + p("Save both files to:") + code('...\\Box\\Project_Biosignals_study_2\\3_Data\\ledalab')],
     ["Check output files", p("Check that both output files have been created before closing Ledalab.")]
   ]}
 ];
@@ -380,15 +411,70 @@ SECTIONS.forEach((sec, si) => {
     cb.addEventListener("change", () => {
       if (cb.checked) state[id] = 1; else delete state[id];
       li.classList.toggle("checked", cb.checked);
+      if (cb.checked) li.classList.remove("missed");
       save(); update();
     });
     list.appendChild(li);
   });
+  const foot = document.createElement("div");
+  foot.className = "sec-foot";
+  foot.innerHTML = `<span class="sec-msg" aria-live="polite"></span><button class="done-btn" type="button">${sec.title}: done</button>`;
+  foot.querySelector("button").addEventListener("click", () => finishSection(si));
+  el.appendChild(foot);
   root.appendChild(el);
   const a = document.createElement("a");
   a.href = "#" + sec.id; a.textContent = sec.title; a.dataset.sec = sec.id;
   nav.appendChild(a);
 });
+
+const modal = document.getElementById("modal");
+let lastFocus = null;
+function closeModal() { modal.hidden = true; if (lastFocus) lastFocus.focus(); }
+document.getElementById("modalClose").addEventListener("click", closeModal);
+modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
+
+function goToStep(li) {
+  modal.hidden = true;
+  li.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  li.classList.remove("flash"); void li.offsetWidth; li.classList.add("flash");
+  li.querySelector("input").focus({ preventScroll: true });
+}
+
+function finishSection(si) {
+  const sec = SECTIONS[si];
+  const el = document.getElementById(sec.id);
+  const steps = [...el.querySelectorAll(".step")];
+  const missed = steps.filter(li => !li.querySelector("input").checked);
+  steps.forEach(li => li.classList.toggle("missed", missed.includes(li)));
+  const msg = el.querySelector(".sec-msg");
+  if (missed.length === 0) {
+    const next = SECTIONS[si + 1];
+    msg.textContent = next ? "Section complete. Moving on…" : "All done. Great work!";
+    if (next) setTimeout(() => {
+      document.getElementById(next.id).scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      msg.textContent = "Section complete";
+    }, 700);
+    return;
+  }
+  msg.textContent = "";
+  lastFocus = document.activeElement;
+  document.getElementById("modalTitle").textContent = missed.length === 1 ? "You missed a step" : `You missed ${missed.length} steps`;
+  document.getElementById("modalText").textContent = `Complete these steps in “${sec.title}” before moving on:`;
+  const list = document.getElementById("modalList");
+  list.innerHTML = "";
+  missed.forEach(li => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `${li.querySelector("label").textContent}<span>Go to step →</span>`;
+    b.addEventListener("click", () => goToStep(li));
+    const item = document.createElement("li");
+    item.appendChild(b);
+    list.appendChild(item);
+  });
+  modal.hidden = false;
+  list.querySelector("button").focus();
+}
 
 function update() {
   let done = 0;
@@ -433,7 +519,8 @@ resetBtn.addEventListener("click", () => {
   }
   clearTimeout(armTimer);
   state = {}; save();
-  document.querySelectorAll(".step input").forEach(cb => { cb.checked = false; cb.closest(".step").classList.remove("checked"); });
+  document.querySelectorAll(".step input").forEach(cb => { cb.checked = false; cb.closest(".step").classList.remove("checked", "missed"); });
+  document.querySelectorAll(".sec-msg").forEach(m => m.textContent = "");
   resetBtn.classList.remove("armed");
   resetBtn.textContent = "Cleared";
   setTimeout(() => resetBtn.textContent = "Reset for next participant", 1500);
